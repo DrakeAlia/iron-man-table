@@ -21,6 +21,7 @@ interface ChartDataItem {
   name?: string;
   title?: string;
   _table: string;
+  registration_count?: number;
   [key: string]:
     | string
     | number
@@ -29,6 +30,17 @@ interface ChartDataItem {
     | undefined
     | { length: number }
     | ChartDataItem;
+}
+
+interface ChartData {
+  data: ChartDataItem[];
+  xAxisField?: string;
+  yAxisField?: string;
+  yAxisLabel?: string;
+  type?: string;
+  title?: string;
+  subtitle?: string;
+  joinType?: string;
 }
 
 const HandTracking: React.FC<HandTrackingProps> = ({ cameraId }) => {
@@ -171,7 +183,8 @@ const HandTracking: React.FC<HandTrackingProps> = ({ cameraId }) => {
     ];
     for (const field of dateFields) {
       if (fields.includes(field)) {
-        return field;2
+        return field;
+        2;
       }
     }
 
@@ -225,7 +238,7 @@ const HandTracking: React.FC<HandTrackingProps> = ({ cameraId }) => {
         if (!error && data) {
           const processedData = data.map((user: Record<string, unknown>) => ({
             ...user,
-            id: typeof user.id === 'number' ? user.id : Number(user.id) || 0,
+            id: typeof user.id === "number" ? user.id : Number(user.id) || 0,
             activity_count: 0,
             _table: referencedTable,
           }));
@@ -259,12 +272,17 @@ const HandTracking: React.FC<HandTrackingProps> = ({ cameraId }) => {
           `);
 
         if (!error && data) {
-          const processedData = data.map((category: Record<string, unknown>) => ({
-            ...category,
-            id: typeof category.id === 'number' ? category.id : Number(category.id) || 0,
-            item_count: 0,
-            _table: referencedTable,
-          }));
+          const processedData = data.map(
+            (category: Record<string, unknown>) => ({
+              ...category,
+              id:
+                typeof category.id === "number"
+                  ? category.id
+                  : Number(category.id) || 0,
+              item_count: 0,
+              _table: referencedTable,
+            })
+          );
 
           return {
             type: "category_distribution",
@@ -285,27 +303,32 @@ const HandTracking: React.FC<HandTrackingProps> = ({ cameraId }) => {
 
       if (!error && data) {
         // Group and count by referenced item
-        const counts = new Map<string, { id: number; count: number; name: string; _table: string }>();
-        data.forEach((item: Record<string, unknown>) => {
-          const referencedItemId = item[foreignKey] as string;
-          if (referencedItemId) {
-            const key = referencedItemId;
-            const displayName = `${referencedTable} ${referencedItemId}`;
+        const counts = new Map<
+          string,
+          { id: number; count: number; name: string; _table: string }
+        >();
+        (data as unknown as Record<string, unknown>[]).forEach(
+          (item: Record<string, unknown>) => {
+            const referencedItemId = item[foreignKey] as string;
+            if (referencedItemId) {
+              const key = referencedItemId;
+              const displayName = `${referencingTable} ${referencedItemId}`;
 
-            if (!counts.has(key)) {
-              counts.set(key, {
-                id: Number(referencedItemId) || 0,
-                name: displayName,
-                count: 0,
-                _table: referencedTable,
-              });
-            }
-            const existing = counts.get(key);
-            if (existing) {
-              existing.count++;
+              if (!counts.has(key)) {
+                counts.set(key, {
+                  id: Number(referencedItemId) || 0,
+                  name: displayName,
+                  count: 0,
+                  _table: referencingTable,
+                });
+              }
+              const existing = counts.get(key);
+              if (existing) {
+                existing.count++;
+              }
             }
           }
-        });
+        );
 
         const processedData = Array.from(counts.values());
 
@@ -327,7 +350,10 @@ const HandTracking: React.FC<HandTrackingProps> = ({ cameraId }) => {
   };
 
   // Detect reference columns between tables
-  const detectTableRelationships = (tableNames: string[], allData: ChartDataItem[]): {
+  const detectTableRelationships = (
+    tableNames: string[],
+    allData: ChartDataItem[]
+  ): {
     foreignKey: string;
     referencingTable: string;
     referencedTable: string;
@@ -337,8 +363,12 @@ const HandTracking: React.FC<HandTrackingProps> = ({ cameraId }) => {
     if (tableNames.length !== 2) return null;
 
     const [table1, table2] = tableNames;
-    const table1Data = allData.filter((item: ChartDataItem) => item._table === table1);
-    const table2Data = allData.filter((item: ChartDataItem) => item._table === table2);
+    const table1Data = allData.filter(
+      (item: ChartDataItem) => item._table === table1
+    );
+    const table2Data = allData.filter(
+      (item: ChartDataItem) => item._table === table2
+    );
 
     if (table1Data.length === 0 || table2Data.length === 0) return null;
 
@@ -383,7 +413,7 @@ const HandTracking: React.FC<HandTrackingProps> = ({ cameraId }) => {
       }
     }
 
-    if (!foreignKey) return null;
+    if (!foreignKey || !referencingTable || !referencedTable) return null;
 
     return {
       foreignKey,
@@ -540,7 +570,7 @@ const HandTracking: React.FC<HandTrackingProps> = ({ cameraId }) => {
     setLoadingData(true);
     try {
       const { supabase } = await import("../lib/supabase");
-      const allData: any[] = [];
+      const allData: ChartDataItem[] = [];
 
       for (const tableName of tableNames) {
         try {
@@ -626,7 +656,7 @@ const HandTracking: React.FC<HandTrackingProps> = ({ cameraId }) => {
     ctx: CanvasRenderingContext2D,
     width: number,
     height: number,
-    chartData: any
+    chartData: ChartData
   ) => {
     const data = chartData.data;
     const xField = chartData.xAxisField || "name";
@@ -645,14 +675,14 @@ const HandTracking: React.FC<HandTrackingProps> = ({ cameraId }) => {
     ctx.textAlign = "center";
     ctx.shadowBlur = 20;
     ctx.shadowColor = "#00FFFF";
-    ctx.fillText(chartData.joinTitle || "JOIN QUERY ANALYSIS", width / 2, 75);
+    ctx.fillText(chartData.title || "JOIN QUERY ANALYSIS", width / 2, 75);
 
     // Subtitle
     ctx.font = "16px monospace";
     ctx.fillStyle = "#00CED1";
     ctx.shadowBlur = 10;
     ctx.fillText(
-      chartData.joinSubtitle || "Schema-based Join Query",
+      chartData.subtitle || "Schema-based Join Query",
       width / 2,
       95
     );
@@ -684,7 +714,12 @@ const HandTracking: React.FC<HandTrackingProps> = ({ cameraId }) => {
       const dateGroups = new Map();
       data.forEach((item: ChartDataItem) => {
         const dateValue = item[xField];
-        if (dateValue && (typeof dateValue === 'string' || typeof dateValue === 'number' || dateValue instanceof Date)) {
+        if (
+          dateValue &&
+          (typeof dateValue === "string" ||
+            typeof dateValue === "number" ||
+            dateValue instanceof Date)
+        ) {
           const date = new Date(dateValue);
           const dateKey = date.toLocaleDateString("en-US", {
             month: "short",
@@ -712,9 +747,13 @@ const HandTracking: React.FC<HandTrackingProps> = ({ cameraId }) => {
       });
     } else {
       // Sort data by y-field value (descending) for non-date fields
-      processedData = [...data].sort(
-        (a, b) => (b[yField] || 0) - (a[yField] || 0)
-      );
+      processedData = [...data].sort((a, b) => {
+        const aValue =
+          typeof a[yField] === "number" ? (a[yField] as number) : 0;
+        const bValue =
+          typeof b[yField] === "number" ? (b[yField] as number) : 0;
+        return bValue - aValue;
+      });
     }
 
     // Render bars - show more data but limit for visual clarity
@@ -859,10 +898,11 @@ const HandTracking: React.FC<HandTrackingProps> = ({ cameraId }) => {
     ctx: CanvasRenderingContext2D,
     width: number,
     height: number,
-    chartData: any
+    chartData: ChartData
   ) => {
     const events = chartData.data.filter(
-      (item: any) => item.registration_count !== undefined
+      (item): item is ChartDataItem & { registration_count: number } =>
+        item.registration_count !== undefined
     );
 
     // Title background panel
@@ -897,7 +937,7 @@ const HandTracking: React.FC<HandTrackingProps> = ({ cameraId }) => {
 
     // Sort events by registration count (descending)
     const sortedEvents = events.sort(
-      (a: any, b: any) => b.registration_count - a.registration_count
+      (a, b) => b.registration_count - a.registration_count
     );
 
     // Render event registration bars - show more data
@@ -925,12 +965,10 @@ const HandTracking: React.FC<HandTrackingProps> = ({ cameraId }) => {
       chartHeight + 100
     );
 
-    const maxCount = Math.max(
-      ...sortedEvents.map((e: any) => e.registration_count)
-    );
+    const maxCount = Math.max(...sortedEvents.map((e) => e.registration_count));
 
     // Draw bars for each event
-    sortedEvents.slice(0, maxItems).forEach((event: any, i: number) => {
+    sortedEvents.slice(0, maxItems).forEach((event, i) => {
       const barHeight =
         maxCount > 0
           ? (event.registration_count / maxCount) * chartHeight * 0.8
@@ -1005,7 +1043,7 @@ const HandTracking: React.FC<HandTrackingProps> = ({ cameraId }) => {
     // Statistics box
     const statsY = height * 0.15;
     const totalRegistrations = events.reduce(
-      (sum: number, event: any) => sum + event.registration_count,
+      (sum, event) => sum + event.registration_count,
       0
     );
     const avgRegistrations =
@@ -1078,8 +1116,9 @@ const HandTracking: React.FC<HandTrackingProps> = ({ cameraId }) => {
           (referencingTitleField ? item[referencingTitleField] : null) ||
           `${relationship.referencingTable} ${item.id}`;
         const referencedTitle =
-          (referencedTitleField ? referencedItem[referencedTitleField] : null) ||
-          `${relationship.referencedTable} ${referencedItem.id}`;
+          (referencedTitleField
+            ? referencedItem[referencedTitleField]
+            : null) || `${relationship.referencedTable} ${referencedItem.id}`;
 
         const key = `${referencedTitle}`;
         if (!relationshipCounts.has(key)) {
@@ -1384,7 +1423,7 @@ const HandTracking: React.FC<HandTrackingProps> = ({ cameraId }) => {
         "timestamp",
       ];
       for (const field of dateFields) {
-        if (chartData.data[0] && Object.hasOwn(chartData.data[0], field)) {
+        if (chartData.data[0] && field in chartData.data[0]) {
           xAxisField = field;
           xAxisType = "date";
           break;
@@ -1408,7 +1447,7 @@ const HandTracking: React.FC<HandTrackingProps> = ({ cameraId }) => {
       }
 
       // Third priority: Use ID
-      if (!xAxisField && chartData.data[0] && Object.hasOwn(chartData.data[0], "id")) {
+      if (!xAxisField && chartData.data[0] && "id" in chartData.data[0]) {
         xAxisField = "id";
         xAxisType = "id";
       }
@@ -1439,7 +1478,12 @@ const HandTracking: React.FC<HandTrackingProps> = ({ cameraId }) => {
 
         chartData.data.forEach((item: ChartDataItem) => {
           const dateValue = item[xAxisField];
-          if (dateValue && (typeof dateValue === 'string' || typeof dateValue === 'number' || dateValue instanceof Date)) {
+          if (
+            dateValue &&
+            (typeof dateValue === "string" ||
+              typeof dateValue === "number" ||
+              dateValue instanceof Date)
+          ) {
             const date = new Date(dateValue);
             const dateKey = date.toLocaleDateString("en-US", {
               month: "short",
@@ -1821,7 +1865,8 @@ const HandTracking: React.FC<HandTrackingProps> = ({ cameraId }) => {
                       swipeStateRef.current.startX,
                       canvasRef.current?.width || 0
                     ),
-                    swipeStateRef.current.startY * (canvasRef.current?.height || 0)
+                    swipeStateRef.current.startY *
+                      (canvasRef.current?.height || 0)
                   );
                   canvasCtx.lineTo(
                     mirrorX(currentX, canvasRef.current?.width || 0),
@@ -1898,9 +1943,11 @@ const HandTracking: React.FC<HandTrackingProps> = ({ cameraId }) => {
 
           // Draw table objects
           const currentTables = tablesRef.current;
+          if (!canvasRef.current) return;
+
           currentTables.forEach((table) => {
-            const tableX = table.x * canvasRef.current.width;
-            const tableY = table.y * canvasRef.current.height;
+            const tableX = table.x * canvasRef.current!.width;
+            const tableY = table.y * canvasRef.current!.height;
             const size = 80;
 
             // Holographic glow effect
@@ -2186,7 +2233,10 @@ const HandTracking: React.FC<HandTrackingProps> = ({ cameraId }) => {
                 const startPoint = landmarks[start];
                 const endPoint = landmarks[end];
 
-                const startX = mirrorX(startPoint.x, canvasRef.current?.width || 0);
+                const startX = mirrorX(
+                  startPoint.x,
+                  canvasRef.current?.width || 0
+                );
                 const startY = startPoint.y * (canvasRef.current?.height || 0);
                 const endX = mirrorX(endPoint.x, canvasRef.current?.width || 0);
                 const endY = endPoint.y * (canvasRef.current?.height || 0);
