@@ -15,6 +15,22 @@ interface TableObject {
   isDragging: boolean;
 }
 
+interface ChartDataItem {
+  id: number;
+  value?: number;
+  name?: string;
+  title?: string;
+  _table: string;
+  [key: string]:
+    | string
+    | number
+    | boolean
+    | null
+    | undefined
+    | { length: number }
+    | ChartDataItem;
+}
+
 const HandTracking: React.FC<HandTrackingProps> = ({ cameraId }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -26,7 +42,7 @@ const HandTracking: React.FC<HandTrackingProps> = ({ cameraId }) => {
   >("hidden");
   const [chartData, setChartData] = useState<{
     tables: string[];
-    data: any[];
+    data: ChartDataItem[];
     isEventsRegistrations?: boolean;
     joinType?: string;
     joinTitle?: string;
@@ -43,7 +59,6 @@ const HandTracking: React.FC<HandTrackingProps> = ({ cameraId }) => {
   const chartAnimationStartRef = useRef<number>(0);
   const {
     tables: availableTables,
-    tableSchemas,
     relationships,
     loading: tablesLoading,
   } = useSupabaseTables();
@@ -136,7 +151,7 @@ const HandTracking: React.FC<HandTrackingProps> = ({ cameraId }) => {
   };
 
   // Determine the best x-axis field based on priority: date > title/name > id
-  const getBestXAxisField = (data: any[]) => {
+  const getBestXAxisField = (data: ChartDataItem[]) => {
     if (!data || data.length === 0) return "id";
 
     const sampleItem = data[0];
@@ -156,7 +171,7 @@ const HandTracking: React.FC<HandTrackingProps> = ({ cameraId }) => {
     ];
     for (const field of dateFields) {
       if (fields.includes(field)) {
-        return field;
+        return field;2
       }
     }
 
@@ -204,14 +219,14 @@ const HandTracking: React.FC<HandTrackingProps> = ({ cameraId }) => {
             created,
             createdAt,
             created_at,
-            date,
-            ${referencingTable}:${referencingTable}(count)
+            date
           `);
 
         if (!error && data) {
-          const processedData = data.map((user) => ({
+          const processedData = data.map((user: Record<string, unknown>) => ({
             ...user,
-            activity_count: user[referencingTable]?.length || 0,
+            id: typeof user.id === 'number' ? user.id : Number(user.id) || 0,
+            activity_count: 0,
             _table: referencedTable,
           }));
 
@@ -240,14 +255,14 @@ const HandTracking: React.FC<HandTrackingProps> = ({ cameraId }) => {
             created,
             createdAt,
             created_at,
-            date,
-            ${referencingTable}:${referencingTable}(count)
+            date
           `);
 
         if (!error && data) {
-          const processedData = data.map((category) => ({
+          const processedData = data.map((category: Record<string, unknown>) => ({
             ...category,
-            item_count: category[referencingTable]?.length || 0,
+            id: typeof category.id === 'number' ? category.id : Number(category.id) || 0,
+            item_count: 0,
             _table: referencedTable,
           }));
 
@@ -265,32 +280,30 @@ const HandTracking: React.FC<HandTrackingProps> = ({ cameraId }) => {
 
       // Strategy 3: Generic aggregation (count references)
       const { data, error } = await supabase.from(referencingTable).select(`
-          ${foreignKey},
-          ${referencedTable}:${referencedTable}(name, title, id, created, createdAt, created_at, date)
+          ${foreignKey}
         `);
 
       if (!error && data) {
         // Group and count by referenced item
-        const counts = new Map();
-        data.forEach((item) => {
-          const referencedItem = item[referencedTable];
-          if (referencedItem) {
-            const key = referencedItem.id;
-            const displayName =
-              referencedItem.title ||
-              referencedItem.name ||
-              `${referencedTable} ${referencedItem.id}`;
+        const counts = new Map<string, { id: number; count: number; name: string; _table: string }>();
+        data.forEach((item: Record<string, unknown>) => {
+          const referencedItemId = item[foreignKey] as string;
+          if (referencedItemId) {
+            const key = referencedItemId;
+            const displayName = `${referencedTable} ${referencedItemId}`;
 
             if (!counts.has(key)) {
               counts.set(key, {
-                ...referencedItem,
+                id: Number(referencedItemId) || 0,
                 name: displayName,
                 count: 0,
-                id: referencedItem.id,
                 _table: referencedTable,
               });
             }
-            counts.get(key).count++;
+            const existing = counts.get(key);
+            if (existing) {
+              existing.count++;
+            }
           }
         });
 
@@ -314,12 +327,18 @@ const HandTracking: React.FC<HandTrackingProps> = ({ cameraId }) => {
   };
 
   // Detect reference columns between tables
-  const detectTableRelationships = (tableNames: string[], allData: any[]) => {
+  const detectTableRelationships = (tableNames: string[], allData: ChartDataItem[]): {
+    foreignKey: string;
+    referencingTable: string;
+    referencedTable: string;
+    referencingData: ChartDataItem[];
+    referencedData: ChartDataItem[];
+  } | null => {
     if (tableNames.length !== 2) return null;
 
     const [table1, table2] = tableNames;
-    const table1Data = allData.filter((item) => item._table === table1);
-    const table2Data = allData.filter((item) => item._table === table2);
+    const table1Data = allData.filter((item: ChartDataItem) => item._table === table1);
+    const table2Data = allData.filter((item: ChartDataItem) => item._table === table2);
 
     if (table1Data.length === 0 || table2Data.length === 0) return null;
 
@@ -562,7 +581,8 @@ const HandTracking: React.FC<HandTrackingProps> = ({ cameraId }) => {
           // Add foreign key relationships for demo
           if (tableNames.length === 2 && tableIndex === 1) {
             // Second table references first table
-            baseRecord[`${tableNames[0]}_id`] =
+            const foreignKeyField = `${tableNames[0]}_id`;
+            (baseRecord as Record<string, unknown>)[foreignKeyField] =
               Math.floor(Math.random() * 5) + 1;
           }
 
@@ -598,6 +618,7 @@ const HandTracking: React.FC<HandTrackingProps> = ({ cameraId }) => {
     }, 100);
 
     return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showChart, chartData, loadingData, chartAnimationState]);
 
   // Join query chart rendering function
@@ -661,9 +682,9 @@ const HandTracking: React.FC<HandTrackingProps> = ({ cameraId }) => {
     if (isDateField) {
       // Group by date for date fields
       const dateGroups = new Map();
-      data.forEach((item) => {
+      data.forEach((item: ChartDataItem) => {
         const dateValue = item[xField];
-        if (dateValue) {
+        if (dateValue && (typeof dateValue === 'string' || typeof dateValue === 'number' || dateValue instanceof Date)) {
           const date = new Date(dateValue);
           const dateKey = date.toLocaleDateString("en-US", {
             month: "short",
@@ -1021,10 +1042,16 @@ const HandTracking: React.FC<HandTrackingProps> = ({ cameraId }) => {
     ctx: CanvasRenderingContext2D,
     width: number,
     height: number,
-    relationship: any
+    relationship: {
+      referencingTable: string;
+      referencedTable: string;
+      foreignKey: string;
+      referencingData: ChartDataItem[];
+      referencedData: ChartDataItem[];
+    }
   ) => {
     // Get title/name fields for both tables
-    const getTitleField = (data: any[]) => {
+    const getTitleField = (data: ChartDataItem[]) => {
       if (data.length === 0) return null;
       const fields = Object.keys(data[0]).filter((key) => !key.startsWith("_"));
       return (
@@ -1040,18 +1067,18 @@ const HandTracking: React.FC<HandTrackingProps> = ({ cameraId }) => {
     // Calculate relationship counts
     const relationshipCounts = new Map();
 
-    relationship.referencingData.forEach((item) => {
+    relationship.referencingData.forEach((item: ChartDataItem) => {
       const foreignKeyValue = item[relationship.foreignKey];
       const referencedItem = relationship.referencedData.find(
-        (ref) => ref.id === foreignKeyValue
+        (ref: ChartDataItem) => ref.id === foreignKeyValue
       );
 
       if (referencedItem) {
         const referencingTitle =
-          item[referencingTitleField] ||
+          (referencingTitleField ? item[referencingTitleField] : null) ||
           `${relationship.referencingTable} ${item.id}`;
         const referencedTitle =
-          referencedItem[referencedTitleField] ||
+          (referencedTitleField ? referencedItem[referencedTitleField] : null) ||
           `${relationship.referencedTable} ${referencedItem.id}`;
 
         const key = `${referencedTitle}`;
@@ -1357,7 +1384,7 @@ const HandTracking: React.FC<HandTrackingProps> = ({ cameraId }) => {
         "timestamp",
       ];
       for (const field of dateFields) {
-        if (chartData.data[0]?.hasOwnProperty(field)) {
+        if (chartData.data[0] && Object.hasOwn(chartData.data[0], field)) {
           xAxisField = field;
           xAxisType = "date";
           break;
@@ -1381,7 +1408,7 @@ const HandTracking: React.FC<HandTrackingProps> = ({ cameraId }) => {
       }
 
       // Third priority: Use ID
-      if (!xAxisField && chartData.data[0]?.hasOwnProperty("id")) {
+      if (!xAxisField && chartData.data[0] && Object.hasOwn(chartData.data[0], "id")) {
         xAxisField = "id";
         xAxisType = "id";
       }
@@ -1410,9 +1437,9 @@ const HandTracking: React.FC<HandTrackingProps> = ({ cameraId }) => {
           { count: number; tables: Set<string> }
         >();
 
-        chartData.data.forEach((item) => {
+        chartData.data.forEach((item: ChartDataItem) => {
           const dateValue = item[xAxisField];
-          if (dateValue) {
+          if (dateValue && (typeof dateValue === 'string' || typeof dateValue === 'number' || dateValue instanceof Date)) {
             const date = new Date(dateValue);
             const dateKey = date.toLocaleDateString("en-US", {
               month: "short",
@@ -1556,6 +1583,15 @@ const HandTracking: React.FC<HandTrackingProps> = ({ cameraId }) => {
           ? "ID"
           : xAxisField.toUpperCase();
       ctx.fillText(xLabel, width / 2, chartY + 60);
+
+      // X-axis line
+      ctx.strokeStyle = "#00FFFF";
+      ctx.lineWidth = 2;
+      ctx.shadowBlur = 10;
+      ctx.beginPath();
+      ctx.moveTo(startX - 20, chartY);
+      ctx.lineTo(startX + maxItems * (barWidth + barSpacing), chartY);
+      ctx.stroke();
     } else {
       // No data message
       ctx.fillStyle = "#FFD700";
@@ -1563,15 +1599,6 @@ const HandTracking: React.FC<HandTrackingProps> = ({ cameraId }) => {
       ctx.textAlign = "center";
       ctx.fillText("NO DATA AVAILABLE", width / 2, height / 2);
     }
-
-    // X-axis line
-    ctx.strokeStyle = "#00FFFF";
-    ctx.lineWidth = 2;
-    ctx.shadowBlur = 10;
-    ctx.beginPath();
-    ctx.moveTo(startX - 20, chartY);
-    ctx.lineTo(startX + maxItems * (barWidth + barSpacing), chartY);
-    ctx.stroke();
 
     // Exit hint background
     ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
@@ -1792,13 +1819,13 @@ const HandTracking: React.FC<HandTrackingProps> = ({ cameraId }) => {
                   canvasCtx.moveTo(
                     mirrorX(
                       swipeStateRef.current.startX,
-                      canvasRef.current.width
+                      canvasRef.current?.width || 0
                     ),
-                    swipeStateRef.current.startY * canvasRef.current.height
+                    swipeStateRef.current.startY * (canvasRef.current?.height || 0)
                   );
                   canvasCtx.lineTo(
-                    mirrorX(currentX, canvasRef.current.width),
-                    currentY * canvasRef.current.height
+                    mirrorX(currentX, canvasRef.current?.width || 0),
+                    currentY * (canvasRef.current?.height || 0)
                   );
                   canvasCtx.stroke();
                 }
@@ -1819,20 +1846,20 @@ const HandTracking: React.FC<HandTrackingProps> = ({ cameraId }) => {
                   canvasCtx.lineWidth = 2;
                   canvasCtx.beginPath();
                   canvasCtx.moveTo(
-                    mirrorX(startPoint.x, canvasRef.current.width),
-                    startPoint.y * canvasRef.current.height
+                    mirrorX(startPoint.x, canvasRef.current?.width || 0),
+                    startPoint.y * (canvasRef.current?.height || 0)
                   );
                   canvasCtx.lineTo(
-                    mirrorX(endPoint.x, canvasRef.current.width),
-                    endPoint.y * canvasRef.current.height
+                    mirrorX(endPoint.x, canvasRef.current?.width || 0),
+                    endPoint.y * (canvasRef.current?.height || 0)
                   );
                   canvasCtx.stroke();
                 });
 
                 // Draw landmarks
                 hand.forEach((landmark) => {
-                  const x = mirrorX(landmark.x, canvasRef.current.width);
-                  const y = landmark.y * canvasRef.current.height;
+                  const x = mirrorX(landmark.x, canvasRef.current?.width || 0);
+                  const y = landmark.y * (canvasRef.current?.height || 0);
 
                   canvasCtx.fillStyle = "#FFD700";
                   canvasCtx.beginPath();
@@ -1852,19 +1879,19 @@ const HandTracking: React.FC<HandTrackingProps> = ({ cameraId }) => {
           canvasCtx.fillRect(
             0,
             0,
-            canvasRef.current.width,
-            canvasRef.current.height
+            canvasRef.current?.width || 0,
+            canvasRef.current?.height || 0
           );
 
           // Add scanline effect
           const time = Date.now() * 0.001;
           canvasCtx.strokeStyle = "rgba(0, 255, 255, 0.03)";
           canvasCtx.lineWidth = 1;
-          for (let y = 0; y < canvasRef.current.height; y += 3) {
+          for (let y = 0; y < (canvasRef.current?.height || 0); y += 3) {
             if (Math.sin(y * 0.01 + time) > 0.98) {
               canvasCtx.beginPath();
               canvasCtx.moveTo(0, y);
-              canvasCtx.lineTo(canvasRef.current.width, y);
+              canvasCtx.lineTo(canvasRef.current?.width || 0, y);
               canvasCtx.stroke();
             }
           }
@@ -2159,10 +2186,10 @@ const HandTracking: React.FC<HandTrackingProps> = ({ cameraId }) => {
                 const startPoint = landmarks[start];
                 const endPoint = landmarks[end];
 
-                const startX = mirrorX(startPoint.x, canvasRef.current.width);
-                const startY = startPoint.y * canvasRef.current.height;
-                const endX = mirrorX(endPoint.x, canvasRef.current.width);
-                const endY = endPoint.y * canvasRef.current.height;
+                const startX = mirrorX(startPoint.x, canvasRef.current?.width || 0);
+                const startY = startPoint.y * (canvasRef.current?.height || 0);
+                const endX = mirrorX(endPoint.x, canvasRef.current?.width || 0);
+                const endY = endPoint.y * (canvasRef.current?.height || 0);
 
                 const gradient = canvasCtx.createLinearGradient(
                   startX,
@@ -2184,8 +2211,8 @@ const HandTracking: React.FC<HandTrackingProps> = ({ cameraId }) => {
 
               // Draw landmarks as glowing nodes
               landmarks.forEach((landmark, index) => {
-                const x = mirrorX(landmark.x, canvasRef.current.width);
-                const y = landmark.y * canvasRef.current.height;
+                const x = mirrorX(landmark.x, canvasRef.current?.width || 0);
+                const y = landmark.y * (canvasRef.current?.height || 0);
 
                 // Outer glow
                 const glowGradient = canvasCtx.createRadialGradient(
@@ -2224,12 +2251,6 @@ const HandTracking: React.FC<HandTrackingProps> = ({ cameraId }) => {
               // Get all relevant landmarks
               const thumbTip = landmarks[4];
               const indexTip = landmarks[8];
-              const indexDIP = landmarks[7];
-              const indexPIP = landmarks[6];
-              const indexMCP = landmarks[5];
-              const middleTip = landmarks[12];
-              const ringTip = landmarks[16];
-              const pinkyTip = landmarks[20];
 
               // Calculate distance between thumb and index finger for pinch
               const distance = Math.sqrt(
@@ -2485,6 +2506,7 @@ const HandTracking: React.FC<HandTrackingProps> = ({ cameraId }) => {
         stream.getTracks().forEach((track) => track.stop());
       }
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cameraId, showChart, toast, chartData, loadingData, chartAnimationState]);
 
   return (
