@@ -184,7 +184,6 @@ const HandTracking: React.FC<HandTrackingProps> = ({ cameraId }) => {
     for (const field of dateFields) {
       if (fields.includes(field)) {
         return field;
-        2;
       }
     }
 
